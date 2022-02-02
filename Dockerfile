@@ -1,35 +1,34 @@
-FROM phpswoole/swoole:php8.1-alpine
+FROM phpswoole/swoole:php8.1
 
 ENV MONGO_INITDB_ROOT_USERNAME=mongo
 ENV MONGO_INITDB_ROOT_PASSWORD=mongo
 ENV MONGO_INITDB_DATABASE=dev
 
-RUN apk add --no-cache \
+RUN apt-get update && \
+    apt-get install -y -q \
+    apt-utils \
     zsh \
-    bash \
-    sed \
-    git \
+    nano \
+    vim \
+    make \
+    locales \
     g++ \
     gcc \
-    make \
+    git \
+    curl \
+    debianutils \
+    binutils \
     sed \
-    autoconf \
+    curl \
+    wget \
     gnupg \
-    openssl \
-    openrc \
-    openssl-dev 
+    gnupg2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.9/main' >> /etc/apk/repositories
-RUN echo 'http://dl-cdn.alpinelinux.org/alpine/v3.9/community' >> /etc/apk/repositories
-
-RUN apk update
-RUN apk upgrade
-RUN apk add -v --no-cache mongodb
-
-VOLUME ["/data/db"]
-
-COPY mongo_run.sh /root
-RUN sh /root/mongo_run.sh
+RUN wget -qO - https://www.mongodb.org/static/pgp/server-5.0.asc | apt-key add -
+RUN echo "deb http://repo.mongodb.org/apt/debian buster/mongodb-org/5.0 main" | tee /etc/apt/sources.list.d/mongodb-org-5.0.list
+RUN apt-get update && apt-get install -y mongodb-mongosh
 
 RUN cp /usr/local/etc/php/php.ini-development /usr/local/etc/php/php.ini
 

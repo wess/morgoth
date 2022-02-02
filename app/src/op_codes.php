@@ -2,7 +2,7 @@
 
 class OpCode {
   const REPLY = 1;
-  const MSG = 1000;
+  const MSG = 2013;
   const UPDATE = 2001;
   const INSERT = 2002;
   const QUERY = 2004;
