@@ -1,163 +1,231 @@
 <?php
 
-use MongoDB\BSON;
+use \MongoDB\BSON as BSON;
 
-require_once __DIR__ . '/auth.php';
-require_once __DIR__ . '/connection.php';
-require_once __DIR__ . '/message.php';
-require_once __DIR__ . '/op_codes.php';
-require_once __DIR__ . '/scram.php';
-require_once __DIR__ . '/socket.php';
+class MongoCommand {
+  const CREATE = "create";
+  const DELETE = "delete";
+  const FIND = "find";
+  const FIND_AND_MODIFY = "findAndModify";
+  const GET_LAST_ERROR = "getLastError";
+  const GET_MORE = "getMore";
+  const INSERT = "insert";
+  const RESET_ERROR = "resetError";
+  const UPDATE = "update";
+  const COUNT = "count";
+  const AGGREGATE = "aggregate";
+  const DISTINCT = "distinct";
+  const MAP_REDUCE = "mapReduce";
+}
 
 
-class Connection {
-  private $options;
-  private $handle;
-  private $auth;
-  private $conn;
-
-  private $isConnected = false;
-
-  /**
-   * Creates a new protocol instance
-   *
-   * @see    https://docs.mongodb.com/manual/reference/connection-string/
-   * @param  string $url Mongo url style connection string
-   * @param  [:string] $options
-   */
-  public function __construct(string $url, array $options = []) 
-  {
-    $this->options = [
-      'params' => [],
-      ...parse_url($url),
-      ...$options,
-    ];
-
-    if(isset($this->options['query'])) {
-      parse_str($this->options['query'], $params);
-
-      unset($this->options['query']);
-
-      $this->options['params'] += $params;
-    }
-
-    $this->conn = new SocketClient(
-      $this->options['host'] ?? 'localhost',
-      $this->options['port'] ?? 27017
-    );
-
-    $this->auth = Auth::mechanism();
-  }
-
-  public function endpoint(bool $usePassword = false): string {
-    $endpoint = 'tcp://';
-
-    if(isset($this->options['user'])) {
-      $pw = ($usePassword ? ($this->options['pass'] ?? 'mongo') : '**********');
-      $endpoint .= $this->options['user'] . ':' . $pw . '@';
-    }
-
-    $endpoint .= $this->options['host'] . ':' . $this->options['port'] ?? 27017;
-
-    $urlQuery = isset($this->options['path']) ? '&authSource=' . \ltrim($this->options['path'], '/') : '';
-
-    foreach($this->options['params'] as $key => $value) {
-      $urlQuery .= '&' . $key . '=' . $value;
-    }
-
-    $urlQuery && $endpoint .= '?' . substr($query, 1);
-
-    return 'tcp://127.0.0.1:27017';  // $endpoint;
+class MongoClient {
+  private $id;
+  private $name;
+  private $host;
+  private $port;
+  private $client;
+  
+  public function __construct($name, $host, $port) {
+    $this->id = uniqid('mongo_client');
+    $this->name = $name;
+    $this->host = $host;
+    $this->port = $port;
+    $this->client = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
   }
 
   public function connect() {
-    if($this->isConnected) return;
+    $this->client->connect($this->host, $this->port);
 
-    $this->conn->connect($this->endpoint(true));
+    return $this;
+  }
 
-    $response = $this->send(OpCode::QUERY, pack(
-      'Va*xVVa*',
-      0,
-      'admin.$cmd',
-      0,
-      1,
-      $this->messageToBSON([
-        'isMaster' => 1,
-        'client' => [
-          'application' => [
-            'name' => $this->options['params']['appName'] ?? $_SERVER['argv'][0]
-          ],
-          'driver' => [
-            'name' => 'Appwrite Mongo Driver', 
-            'version' => '0.0.1'
-          ],
-          'os' => [
-            'name' => php_uname('s'), 
-            'type' => PHP_OS, 
-            'architecture' => php_uname('m'), 
-            'version' => php_uname('r')
+  private function query($command) {
+
+    $sections = BSON\fromPHP([
+      ...$command,
+      '$db' => $this->name,
+    ]);
+
+    $message = pack('V*', 21 + strlen($sections), $this->id, 0, 2013, 0) . "\0" . $sections;
+
+    return $this->send($message);
+  }
+
+  private function send($data) {
+    $this->client->send($data);
+
+    return $this->receive();
+  }
+
+  private function receive() {
+    $receivedLength = 0;
+    $responseLength = null;
+    $res = '';
+
+    do {
+      if (($chunk = $this->client->recv()) === false) {
+          Co::sleep(0.5); // Prevent excessive CPU Load, test lower.
+          continue;
+      }
+      
+      $receivedLength += strlen($chunk);
+      $res .= $chunk;
+
+      if ((!isset($responseLength)) && (strlen($res) >= 4)) {
+          $responseLength = unpack('Vl', substr($res, 0, 4))['l'];
+      }
+
+    } while (
+      (!isset($responseLength)) || ($receivedLength < $responseLength) 
+    );
+
+    $result = BSON\toPHP(substr($res, 21, $responseLength - 21));
+
+    var_dump($result);
+
+    if(property_exists($result, "n") && $result->n > 0 && $result->ok == 1) {
+      return "ok";
+    }
+
+    if(property_exists($result, 'errmsg')) {
+      die($result->errmsg);
+    }
+
+    return $result->cursor->firstBatch;
+  }
+
+  // For options see: https://docs.mongodb.com/manual/reference/command/create/#mongodb-dbcommand-dbcmd.create
+  public function createCollection($name, $options = []) {
+    $this->query($name, [
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/drop/#mongodb-dbcommand-dbcmd.drop
+  public function dropCollection($name, $options = []) {
+    $this->query($name, [
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/createIndexes/#createindexes
+  public function createIndexes($collection, $indexes, $options = []) {
+    $this->query([
+      'createIndexes' => $collection,
+      'indexes' => $indexes,
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/dropIndexes/#dropindexes
+  public function dropIndexes($collection, $indexes, $options = []) {
+    $this->query([
+      'dropIndexes' => $collection,
+      'indexes' => $indexes,
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/insert/#mongodb-dbcommand-dbcmd.insert
+  public function insert($collection, $documents, $options = []) {
+    $documents = is_array($documents) ? $documents : [$documents];
+    
+    $docObjects = [];
+    foreach($documents as $doc) {
+      foreach((object)$doc as $k=>$value) {
+        $docObj = new \stdClass();
+        $docObj->{$k} = $value;
+
+        $docObjects[] = $docObj;
+      }
+    }
+
+    $this->query([
+      MongoCommand::INSERT => $collection, 
+      'documents' => $docObjects, 
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/update/#syntax
+  public function update($collection, $updates = [], $options = []) {
+    $documents = is_array($documents) ? $documents : [$documents];
+    
+    $docObjects = [];
+    foreach($documents as $doc) {
+      foreach((object)$doc as $k=>$value) {
+        $docObj = new \stdClass();
+        $docObj->{$k} = $value;
+
+        $docObjects[] = $docObj;
+      }
+    }
+
+    $this->query([
+      MongoCommand::UPDATE => $collection, 
+      'documents' => $docObjects, 
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/find/#mongodb-dbcommand-dbcmd.find
+  public function find($collection, $filters = [], $options = []) {
+    return $this->query([
+      MongoCommand::FIND => $collection,
+      'filter' => $this->toObject($filters),
+      ...$options,
+    ]);
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/findAndModify/#mongodb-dbcommand-dbcmd.findAndModify
+  public function findAndModify($collection, $document, $remove = false, $update, $filters = [], $options = []) {
+    return $this->query([
+      MongoCommand::FIND_AND_MODIFY => $collection,
+      'filter' => $this->toObject($filters),
+      'remove' => $remove,
+      'update' => $update,
+      ...$options,
+    ]);
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/delete/#mongodb-dbcommand-dbcmd.delete
+  public function delete($collection, $filters = [], $limit = 1, $deleteOptions = [], $options = []) {
+    return $this->query([
+      MongoCommand::DELETE => $collection,
+      'deletes' => [
+        $this->toObject(
+          [
+            'q' => $this->toObject($filters),
+            'limit' => $limit,
+            ...$deleteOptions
           ]
-        ]
-      ])
-    ));
+        ),
+      ],
+      ...$options,
+    ]);
+  }
 
-    var_dump($response);
 
-    if($response == null) {
-      die("Response is empty");
+  private function toObject($dict) {
+    $obj = new \stdClass();
+
+    foreach($dict as $k => $v) {
+      $obj->{$k} = $v;
     }
 
-    $this->options['connection_details'] = \current($response['documents']);
-
-    try {
-      $source = $this->options['params']['authSource'] ?? (isset($this->options['path']) ? ltrim($this->options['path'], '/') : 'admin');
-
-      $dialog = $this->dialog(
-        \urldecode($this->options['user']),
-        \urldecode($this->options['pass']),
-        $source,
-      );
-
-      // while($source->valid()) {
-      //   $result = $this->send(
-      //     OpCode::MSG,
-      //     pack(
-      //       'Vca*',
-      //       0,
-      //       'admin.$cmd',
-            
-      //       messageToBSON()
-      //     )
-      //   );
-      // }
-
-    } catch(\Exception $e) {
-      throw new \Exception('Unable to authenticate with the server');
-    }
-  }
-
-  public function send($action, $message) {
-    $data = gettype($message) === 'string' ? $message : $this->messageToBSON($message);
-
-    $body = pack('VVVV', strlen($data) + 16, 1, 0, $action) . $data;
-
-    $res = $this->conn->write($body);
-
-    echo "\$res:";
-    var_dump($res);
-
-    // $header = \unpack('VmessageLength/VrequestID/VresponseTo/VopCode', $this->read(16));
-    // $response = $this->read($header['messageLength'] - 16);
-
-    // var_dump($header);
-    // var_dump($response);
-  }
-
-  public function read($bytes) {
-    return $this->conn->readBinary($bytes);
-  }
-
-  public function messageToBSON($data): string {
-    return BSON\fromPHP($data);
+    return $obj;
   }
 }
