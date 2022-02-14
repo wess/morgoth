@@ -82,9 +82,7 @@ class MongoClient {
 
     $result = BSON\toPHP(substr($res, 21, $responseLength - 21));
 
-    var_dump($result);
-
-    if(property_exists($result, "n") && $result->n > 0 && $result->ok == 1) {
+    if(property_exists($result, "n") && $result->ok == 1) {
       return "ok";
     }
 
@@ -159,22 +157,37 @@ class MongoClient {
   }
 
   // https://docs.mongodb.com/manual/reference/command/update/#syntax
-  public function update($collection, $updates = [], $options = []) {
-    $documents = is_array($documents) ? $documents : [$documents];
+  public function update($collection, $where = [], $updates = [], $options = []) {
     
-    $docObjects = [];
-    foreach($documents as $doc) {
-      foreach((object)$doc as $k=>$value) {
-        $docObj = new \stdClass();
-        $docObj->{$k} = $value;
-
-        $docObjects[] = $docObj;
-      }
-    }
-
     $this->query([
       MongoCommand::UPDATE => $collection, 
-      'documents' => $docObjects, 
+      'updates' => [
+        [
+          'q' => $this->toObject($where),
+          'u' => $this->toObject($updates),
+          'multi' => false,
+          'upsert' => false
+        ]
+      ],
+      ...$options
+    ]);
+
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/update/#syntax
+  public function upsert($collection, $where = [], $updates = [], $options = []) {
+    
+    $this->query([
+      MongoCommand::UPDATE => $collection, 
+      'updates' => [
+        [
+          'q' => $this->toObject($where),
+          'u' => $this->toObject($updates),
+          'multi' => false,
+          'upsert' => true
+        ]
+      ],
       ...$options
     ]);
 
@@ -191,7 +204,7 @@ class MongoClient {
   }
 
   // https://docs.mongodb.com/manual/reference/command/findAndModify/#mongodb-dbcommand-dbcmd.findAndModify
-  public function findAndModify($collection, $document, $remove = false, $update, $filters = [], $options = []) {
+  public function findAndModify($collection, $document, $update, $remove = false, $filters = [], $options = []) {
     return $this->query([
       MongoCommand::FIND_AND_MODIFY => $collection,
       'filter' => $this->toObject($filters),
@@ -223,7 +236,14 @@ class MongoClient {
     $obj = new \stdClass();
 
     foreach($dict as $k => $v) {
-      $obj->{$k} = $v;
+      $key = $k == 'id' ? '_id' : $k;
+      $val = $v;
+
+      if($k == '_id') {
+        $val = new \MongoDB\BSON\ObjectId($v);
+      }
+
+      $obj->{$key} = $val;
     }
 
     return $obj;

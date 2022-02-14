@@ -27,7 +27,7 @@ define('DB_PORT', 27017);
 // define('DB_USER', "mongo");
 // define('DB_PASS', "mongo");
 define('DB_NAME', 'dev');
-define('COLLECTION', 'testing');
+define('COLLECTION', 'testing3');
 define('OBJECT_ID', '5e774940b5309447f90ac037');
 define('OP_MSG', 2013);
 
@@ -60,20 +60,19 @@ Swoole\Coroutine\run(function() use ($pool) {
 
   $client = $pool->get();
 
-  $client->insert(COLLECTION, ['message' => 'Torsten!']);
-  $client->insert(COLLECTION, ['message' => 'Wess!']);
-  $client->insert(COLLECTION, ['message' => 'Eldad!']);
-  $client->insert(COLLECTION, [
-    ['message' => 'one'],
-    ['message' => 'two'],
-    ['message' => 'three'],
-    ['message' => 'four'],
-    ['message' => 'five'],
-    ['message' => 'six']
-  ]);
+  // $client->insert(COLLECTION, ['message' => 'Torsten!']);
+  // $client->insert(COLLECTION, ['message' => 'Wess!']);
+  // $client->insert(COLLECTION, ['message' => 'Eldad!']);
 
-  $result = $client->find(COLLECTION, []);
+  
+  $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
+  var_dump($result);
+  
+  $client->update(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df'], ['$set' => ['message' => 'Torsten!']]);
+
+  $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
+  var_dump($result);
 
   $pool->put($client);
-  var_dump($result);
 });
+
