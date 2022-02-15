@@ -71,6 +71,11 @@ Swoole\Coroutine\run(function() use ($pool) {
   $client->update(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df'], ['$set' => ['message' => 'Torsten!']]);
 
   $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
+  
+  $result = $client->delete(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
+  
+  $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
+  
   var_dump($result);
 
   $pool->put($client);

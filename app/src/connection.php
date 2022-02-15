@@ -92,6 +92,20 @@ class MongoClient {
 
     return $result->cursor->firstBatch;
   }
+  
+  public function createDatabase($name) {
+    return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/dropDatabase/#mongodb-dbcommand-dbcmd.dropDatabase
+  public function dropDatabase($options = []) {
+    $this->query([
+      "dropDatabase" => 1,
+      ...$options
+    ]);
+
+    return $this;
+  }
 
   // For options see: https://docs.mongodb.com/manual/reference/command/create/#mongodb-dbcommand-dbcmd.create
   public function createCollection($name, $options = []) {
