@@ -7,6 +7,7 @@ ini_set('display_errors', 'on');
 // require_once __DIR__ . '/src/connection.php';
 // require_once __DIR__ . '/src/message.php';
 require_once __DIR__ . '/src/connection.php';
+require_once __DIR__ . '/src/adapter.php';
 // require_once __DIR__ . '/src/scram.php';
 // require_once __DIR__ . '/src/socket.php';
 
@@ -59,6 +60,12 @@ Swoole\Coroutine\run(function() use ($pool) {
   $result = 'pending';
 
   $client = $pool->get();
+
+  $adapter = new MongoDBAdapter($client);
+  $adapter->setNamespace("testing_namespace");
+  $adapter->list();
+
+  $adapter->exists(DB_NAME, COLLECTION);
 
   // $client->insert(COLLECTION, ['message' => 'Torsten!']);
   // $client->insert(COLLECTION, ['message' => 'Wess!']);

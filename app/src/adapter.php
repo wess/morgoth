@@ -2,7 +2,7 @@
 
 require_once __DIR__ . '/connection.php';
 
-class MongoDB extends Adapter
+class MongoDBAdapter // extends Adapter
 {
     /**
      * @var MongoClient
@@ -946,4 +946,48 @@ class MongoDB extends Adapter
     {
         return true;
     }
+
+    ////// TEMP
+    public function filter(string $value):string
+    {
+        $value = preg_replace("/[^A-Za-z0-9\_\-\.]/", '', $value);
+
+        if(\is_null($value)) {
+            throw new Exception('Failed to filter key');
+        }
+
+        return $value;
+    }
+
+    public function getNamespace(): string
+    {
+        if (empty($this->namespace)) {
+            throw new Exception('Missing namespace');
+        }
+
+        return $this->namespace;
+    }
+
+    public function setDefaultDatabase(string $name, bool $reset = false): bool
+    {
+        if (empty($name) && $reset === false) {
+            throw new Exception('Missing database');
+        }
+
+        $this->defaultDatabase = ($reset) ? '' : $this->filter($name);
+
+        return true;
+    }
+
+    public function setNamespace(string $namespace): bool
+    {
+        if (empty($namespace)) {
+            throw new Exception('Missing namespace');
+        }
+
+        $this->namespace = $this->filter($namespace);
+
+        return true;
+    }
+
 }

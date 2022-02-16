@@ -82,6 +82,8 @@ class MongoClient {
 
     $result = BSON\toPHP(substr($res, 21, $responseLength - 21));
 
+    var_dump($result);
+    
     if(property_exists($result, "n") && $result->ok == 1) {
       return "ok";
     }
@@ -93,8 +95,19 @@ class MongoClient {
     return $result->cursor->firstBatch;
   }
   
+  public function selectDatabase($name) {
+    return $this;
+  }
+
   public function createDatabase($name) {
     return $this;
+  }
+
+  public function listDatabaseNames() {
+    return $this->query([
+      'listDatabases' => 1,
+      'nameOnly' => true,
+    ]);
   }
 
   // https://docs.mongodb.com/manual/reference/command/dropDatabase/#mongodb-dbcommand-dbcmd.dropDatabase
@@ -123,6 +136,16 @@ class MongoClient {
     ]);
 
     return $this;
+  }
+
+  // https://docs.mongodb.com/manual/reference/command/listCollections/#listcollections
+  public function listCollectionNames($filter = [], $options = []) {
+    return $this->query([
+      "listCollections" => 1,
+      "nameOnly" => true,
+      "filter" => $this->toObject($filter),
+      ...$options
+    ]);
   }
 
   // https://docs.mongodb.com/manual/reference/command/createIndexes/#createindexes
