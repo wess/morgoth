@@ -31,20 +31,25 @@ class MongoClient {
     $this->name = $name;
     $this->host = $host;
     $this->port = $port;
-    $this->client = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP);
+    $this->client = new Swoole\Coroutine\Client(SWOOLE_SOCK_TCP | SWOOLE_KEEP);
   }
 
   public function connect() {
-    $this->client->connect($this->host, $this->port);
+    echo "Connecting...\n";
+
+    $res = $this->client->connect($this->host, $this->port);
 
     return $this;
   }
 
-  private function query($command) {
+  public function raw_query($string) {
+    return $this->send($string);
+  }
 
+  public function query($command, $db = null) {
     $sections = BSON\fromPHP([
       ...$command,
-      '$db' => $this->name,
+      '$db' => $db ?? $this->name,
     ]);
 
     $message = pack('V*', 21 + strlen($sections), $this->id, 0, 2013, 0) . "\0" . $sections;
@@ -52,7 +57,23 @@ class MongoClient {
     return $this->send($message);
   }
 
-  private function send($data) {
+  public function blocking($cmd) {
+    $this->client->send($cmd . PHP_EOL);
+
+    $result = '';
+
+    while(true) {
+      $data = $this->client->recv();
+
+      var_dump($data);
+
+      Co::sleep(0.5);
+    }
+
+    return $result;
+  }
+
+  public function send($data) {
     $this->client->send($data);
 
     return $this->receive();
@@ -65,7 +86,7 @@ class MongoClient {
 
     do {
       if (($chunk = $this->client->recv()) === false) {
-          Co::sleep(0.5); // Prevent excessive CPU Load, test lower.
+          Co::sleep(1); // Prevent excessive CPU Load, test lower.
           continue;
       }
       
@@ -82,16 +103,27 @@ class MongoClient {
 
     $result = BSON\toPHP(substr($res, 21, $responseLength - 21));
 
-    var_dump($result);
-    
     if(property_exists($result, "n") && $result->ok == 1) {
       return "ok";
     }
 
+    if(property_exists($result, "nonce") && $result->ok == 1) {
+      return $result;
+    }
+
     if(property_exists($result, 'errmsg')) {
+      echo "\n\n\n\n\n";
+      echo "++++++++++++++++++ ERRRRRRRR\n";
+      var_dump($result);
+      echo "\n\n\n\n\n";
+
       die($result->errmsg);
     }
 
+    if($result->ok == 1) {
+      return $result;
+    }
+    
     return $result->cursor->firstBatch;
   }
   

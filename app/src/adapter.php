@@ -21,6 +21,13 @@ class MongoDBAdapter // extends Adapter
         $this->client = $client;
     }
 
+    public function hello()
+    {
+      var_dump($this->getClient());
+
+      return $this->getClient()->query(['hello' => 1]);   
+    }
+
     /**
      * Create Database
      *
