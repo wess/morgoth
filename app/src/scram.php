@@ -10,7 +10,7 @@ class Hash {
   }
 
   public static function generateSalt() {
-    return base64_encode(random_bytes(24));
+    return base64_encode(random_bytes(32));
   }
 
   public static function encode($value) {
@@ -22,6 +22,13 @@ class Hash {
   }
 
   public static function hi($value, $salt, $iterations) {
-    return hash_pbkdf2("sha1", $value, utf8_decode($salt), $iterations);
+    return hash_pbkdf2(
+      "sha1", 
+      $value, 
+      base64_decode($salt), 
+      intval($iterations),
+      0,
+      true
+    );
   }
 }

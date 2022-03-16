@@ -38,17 +38,24 @@ define('OP_MSG', 2013);
 
 Swoole\Runtime::enableCoroutine(true);
 
-// $manager = new \MongoDB\Driver\Manager(sprintf('mongodb://%s:%d', DB_HOST, DB_PORT));
-// $bulk = new \MongoDB\Driver\BulkWrite();
-// $objectId = new \MongoDB\BSON\ObjectId(OBJECT_ID);
-// $bulk->update(
-//     ['_id' => $objectId],
-//     ['_id' => $objectId, 'message' => 'Torsten!'],
-//     ['multi' => false, 'upsert' => true]
-// );
-// $manager->executeBulkWrite(sprintf('%s.%s', DB_NAME, COLLECTION), $bulk);
+// $systemUser = "wess";
+// $systemPassword = "ssew";
+
+// $manager = new \MongoDB\Driver\Manager(sprintf('mongodb://%s:%s@%s:%d', DB_USER, DB_PASS, DB_HOST, DB_PORT));
+// $command = new \MongoDB\Driver\Command([
+//   "createUser" => $systemUser,
+//   "pwd"        => $systemPassword,
+//   "roles"      => array(
+//       array("role" => "readWrite", "db" => DB_NAME)
+//   )
+// ]);
+
+// $cursor = $manager->executeCommand('admin', $command);
+
+// var_dump($cursor);
 
 $pool = new Swoole\ConnectionPool(function() {
+
   $client = new MongoClient(DB_NAME, DB_HOST, DB_PORT);
 
   $client->connect();
@@ -57,13 +64,8 @@ $pool = new Swoole\ConnectionPool(function() {
     'hello' => 1,
   ]);
 
-  // echo "\n\n\n\n\n";
-  // echo "++++++++++++++++++ HELLO\n";
-  // var_dump($res);
-  // echo "\n\n\n\n\n";
-
-  $password = DB_PASS;  
   $username = DB_USER;
+  $password = DB_PASS;  
   $user = utf8_encode($username);
 
   str_replace("=", "=3D", $user);
@@ -80,6 +82,7 @@ $pool = new Swoole\ConnectionPool(function() {
     "mechanism" => "SCRAM-SHA-1",
     "payload" => $payload,
     "autoAuthorize" => 1,
+    "options" => ["skipEmptyExchange" => true],
   ], 'admin');
 
   var_dump($res);
@@ -87,7 +90,7 @@ $pool = new Swoole\ConnectionPool(function() {
   $cid = $res->conversationId;
   $token = $res->payload->getData();
   
-  var_dump($token);
+  var_dump($res->payload);
 
   $parts = explode(',', $token);
 
@@ -98,14 +101,14 @@ $pool = new Swoole\ConnectionPool(function() {
   $rnounce = str_replace('r=', '', $parts[0]);
   $salt = str_replace('s=', '', $parts[1]);
   $iteration = str_replace('i=', '', $parts[2]);
-  $withoutProof = "c=biws,r=" . $rnounce;
+  $withoutProof = "c=" . base64_encode("biws") . ",r=" . $rnounce;
 
   $credentials = $username . ':mongo:' . $password;
-  $credentials = md5(utf8_encode($credentials));
+  $credentials = utf8_encode(md5(utf8_encode($credentials)));
   $credentials = Hash::hi($credentials, $salt, $iteration);
 
   $clientKey = Hash::hmacSha1($credentials, "Client Key");
-  $storedKey = sha1($clientKey);
+  $storedKey = hash('sha1', $clientKey, true);
   $authMsg = implode(",", [$first, $token, $withoutProof]);
   $clientSig = Hash::hmacSha1($authMsg, $storedKey);
   $clientProof = "p=" . base64_encode($clientKey ^ $clientSig);
