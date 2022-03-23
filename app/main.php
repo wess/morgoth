@@ -1,9 +1,11 @@
 <?php
 
+require_once __DIR__ . '/vendor/autoload.php';
 error_reporting(E_ALL);
 ini_set('display_errors', 'on');
 
 use \MongoDB\BSON as BSON;
+use Fabiang\Sasl\Sasl;
 
 // require_once __DIR__ . '/src/auth.php';
 // require_once __DIR__ . '/src/connection.php';
@@ -21,10 +23,10 @@ $loadedExtensions = get_loaded_extensions();
 $requiredExtensions = ['json', 'mongodb', 'swoole'];
 $missingExtensions = array_diff($requiredExtensions, $loadedExtensions);
 if (count($missingExtensions) > 0) {
-    error_log('The following extension(s) is/are missing: ' . implode(', ', $missingExtensions), 4);
-    exit(-1);
+  error_log('The following extension(s) is/are missing: ' . implode(', ', $missingExtensions), 4);
+  exit(-1);
 }
-define('DB_HOST', '192.168.7.216');
+define('DB_HOST', '192.168.65.2');
 define('DB_PORT', 27017);
 // define('DB_HOST', '4.tcp.ngrok.io');
 // define('DB_PORT', 18636);
@@ -54,18 +56,17 @@ Swoole\Runtime::enableCoroutine(true);
 
 // var_dump($cursor);
 
-$pool = new Swoole\ConnectionPool(function() {
+$pool = new Swoole\ConnectionPool(function () {
 
   $client = new MongoClient(DB_NAME, DB_HOST, DB_PORT);
-
   $client->connect();
-  
+  $factory = new Sasl;
+
   $res = $client->query([
     'hello' => 1,
   ]);
-
   $username = DB_USER;
-  $password = DB_PASS;  
+  $password = DB_PASS;
   $user = utf8_encode($username);
 
   str_replace("=", "=3D", $user);
@@ -74,9 +75,19 @@ $pool = new Swoole\ConnectionPool(function() {
   $nonce = Hash::generateSalt();
 
   $first = "n=" . $user . ",r=" . $nonce;
+  $credentials = DB_USER . ':mongo:' . DB_PASS;
+  $credentials = md5(utf8_encode($credentials));
 
-  $payload = new \MongoDB\BSON\Binary("n,," . $first, 0);
-  
+  $mechanism = $factory->factory('SCRAM-SHA-1', array(
+      'authcid'  => DB_USER,
+      'secret'   => $credentials,
+  ));
+  $response = $mechanism->createResponse();
+  var_dump($response);
+  var_dump("n,," . $first);
+
+  $payload = new \MongoDB\BSON\Binary($response, 0);
+
   $res = $client->query([
     "saslStart" => 1,
     "mechanism" => "SCRAM-SHA-1",
@@ -85,16 +96,14 @@ $pool = new Swoole\ConnectionPool(function() {
     "options" => ["skipEmptyExchange" => true],
   ], 'admin');
 
-  var_dump($res);
-
   $cid = $res->conversationId;
   $token = $res->payload->getData();
-  
+  var_dump("-- res->payload");
   var_dump($res->payload);
 
   $parts = explode(',', $token);
 
-  if(count($parts) < 3) {
+  if (count($parts) < 3) {
     die("Invalid parts");
   }
 
@@ -115,8 +124,10 @@ $pool = new Swoole\ConnectionPool(function() {
   $clientFinal = $withoutProof . ',' . $clientProof;
 
   echo "\n\n{$clientFinal}\n\n";
-
-  $payload = new \MongoDB\BSON\Binary($clientFinal, 0);
+  $answer = $mechanism->createResponse($token);
+  var_dump($answer);
+  var_dump($clientFinal);
+  $payload = new \MongoDB\BSON\Binary($answer, 0);
 
   $res = $client->query([
     "saslContinue" => 1,
@@ -129,7 +140,7 @@ $pool = new Swoole\ConnectionPool(function() {
   return $client;
 }, 10);
 
-Swoole\Coroutine\run(function() use ($pool) {
+Swoole\Coroutine\run(function () use ($pool) {
   echo "RUNNING..\n";
 
   $result = 'pending';
@@ -138,27 +149,26 @@ Swoole\Coroutine\run(function() use ($pool) {
 
   $adapter = new MongoDBAdapter($client);
   $adapter->setNamespace("testing_namespace");
-  // $adapter->list();
+  // var_dump($adapter->list());
 
   // $adapter->exists(DB_NAME, COLLECTION);
 
-  // $client->insert(COLLECTION, ['message' => 'Torsten!']);
-  // $client->insert(COLLECTION, ['message' => 'Wess!']);
-  // $client->insert(COLLECTION, ['message' => 'Eldad!']);
+  $client->insert(COLLECTION, ['message' => 'Torsten!']);
+  $client->insert(COLLECTION, ['message' => 'Wess!']);
+  $client->insert(COLLECTION, ['message' => 'Eldad!']);
 
-  
-  // $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
-  // var_dump($result);
-  
+
+  $result = $client->find(COLLECTION);
+  var_dump($result);
+
   // $client->update(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df'], ['$set' => ['message' => 'Torsten!']]);
 
   // $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
-  
+
   // $result = $client->delete(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
-  
+
   // $result = $client->find(COLLECTION, ['_id' => '620a96ee6a351f0edf72a2df']);
 
 
   $pool->put($client);
 });
-
