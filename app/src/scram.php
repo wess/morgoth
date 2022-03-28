@@ -5,8 +5,8 @@ class Hash {
     return sha1($data);
   }
 
-  public static function hmacSha1($input, $key) {
-    return hash_hmac("sha1", $input, $key, true); 
+  public static function hmac($input, $key) {
+    return hash_hmac('sha1', $input, $key, true); 
   }
 
   public static function generateSalt() {
@@ -32,3 +32,4 @@ class Hash {
     );
   }
 }
+
